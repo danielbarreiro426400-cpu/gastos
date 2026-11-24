@@ -22,6 +22,23 @@
   .quick:empty { display: none; }
   .quick button { font: inherit; font-size: .8rem; white-space: nowrap; border: 0; background: var(--soft); color: var(--text); padding: 8px 12px; border-radius: 999px; display: flex; align-items: center; gap: 6px; }
   .quick button b { font-weight: 650; }
+  [hidden] { display: none !important; }
+  /* Débenme */
+  #owedTotal { color: var(--warn); font-weight: 700; }
+  .owed-fields { display: grid; gap: 10px; }
+  .owed-person { background: var(--soft); border-radius: 16px; padding: 12px; margin-bottom: 10px; }
+  .owed-person:last-child { margin-bottom: 0; }
+  .owed-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .owed-head .info { flex: 1; min-width: 0; }
+  .owed-head small { display: block; font-size: .75rem; color: var(--muted); }
+  .owed-head .amt { font-weight: 700; color: var(--warn); }
+  .owed-item { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: .85rem; padding: 7px 0; border-top: 1px solid var(--line); }
+  .owed-item span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  .owed-item button { border: 0; background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); border-radius: 10px; padding: 6px 10px; font: inherit; font-size: .78rem; font-weight: 600; }
+  .owed-all { width: 100%; margin-top: 8px; border: 0; border-radius: 12px; padding: 10px; font: inherit; font-size: .85rem; font-weight: 600; background: var(--card); color: var(--text); }
+  .item .amt.owed { color: var(--muted); }
+  .tag.pend { background: color-mix(in srgb, var(--warn) 18%, transparent); }
+  .tag.done { background: color-mix(in srgb, var(--ok) 15%, transparent); }
   :root {
     --bg: #f2f4f3; --card: #ffffff; --text: #17201f; --muted: #6b7774; --line: #e7ebea; --soft: #f5f7f6;
     --accent: #0f766e; --accent-dark: #0d5e58; --accent-2: #14b8a6;
@@ -191,6 +208,10 @@
     <div class="stat"><div class="dot" style="background:color-mix(in srgb,var(--accent-2) 14%,transparent)">🐷</div><div><small>Saldo</small><b id="sumBal"></b></div></div>
   </div>
 
+  <section class="card" id="owedCard" hidden>
+    <h2>👪 Débenme <span id="owedTotal"></span></h2>
+    <div id="owedList"></div>
+  </section>
   <section class="card">
     <h2>Orzamento <button id="editBudget">Axustar</button></h2>
     <div id="budget"></div>
@@ -232,6 +253,12 @@
     <div class="cats" id="cats"></div>
     <label>Descrición<input id="desc" type="text" placeholder="Ex.: compra no super" maxlength="80" list="descList" autocomplete="off"></label>
     <datalist id="descList"></datalist>
+    <label class="check" id="owedWrap"><input type="checkbox" id="owed"> 👪 Mo teñen que devolver</label>
+    <div class="owed-fields" id="owedFields" hidden>
+      <label>Quen cho debe?<input id="owedWho" type="text" list="whoList" placeholder="Ex.: Pais" maxlength="40" autocomplete="off"></label>
+      <datalist id="whoList"></datalist>
+      <label class="check"><input type="checkbox" id="owedPaid"> ✅ Xa mo devolveron</label>
+    </div>
     <label>Data<input id="date" type="date" required></label>
     <label class="check" id="repeatWrap"><input type="checkbox" id="repeat"> 🔁 Repetir cada mes</label>
     <div class="actions">
@@ -309,7 +336,8 @@ function runRecurring() {
 
 function monthData(key) {
   const items = gastos.filter(g => g.date.startsWith(key));
-  const exp = items.filter(g => !isInc(g));
+  // O que adiantas por outros non conta como gasto teu
+  const exp = items.filter(g => !isInc(g) && !g.owed);
   const byCat = {};
   exp.forEach(g => byCat[g.cat] = (byCat[g.cat] || 0) + g.amount);
   return { items, expTotal: exp.reduce((s, g) => s + g.amount, 0), incTotal: items.filter(isInc).reduce((s, g) => s + g.amount, 0), byCat };
@@ -346,8 +374,41 @@ function renderBanner() {
   }
 }
 
+// Débenme: o que adiantaches e aínda non che devolveron (de todos os meses)
+function renderOwed() {
+  const pend = gastos.filter(g => g.owed && !g.owed.paid);
+  $('owedCard').hidden = !pend.length;
+  if (!pend.length) return;
+  const by = {};
+  pend.forEach(g => (by[g.owed.who] ||= []).push(g));
+  $('owedTotal').textContent = eur(pend.reduce((s, g) => s + g.amount, 0));
+  $('owedList').innerHTML = Object.entries(by).map(([who, items]) => {
+    const t = items.reduce((s, g) => s + g.amount, 0);
+    return `<div class="owed-person"><div class="owed-head"><div class="chip" style="background:color-mix(in srgb, var(--warn) 16%, transparent)">👪</div>
+      <div class="info"><b>${esc(who)}</b><small>${items.length} ${items.length === 1 ? 'cousa pendente' : 'cousas pendentes'}</small></div><span class="amt">${eur(t)}</span></div>
+      ${items.sort((a, b) => b.date.localeCompare(a.date)).map(g => {
+        const d = new Date(g.date + 'T12:00').toLocaleDateString('gl-ES', { day: 'numeric', month: 'short' });
+        return `<div class="owed-item"><span>${d} · ${esc(g.desc || catInfo(g.cat)[2])}</span><b>${eur(g.amount)}</b><button data-paid="${g.id}">✓ Devolto</button></div>`;
+      }).join('')}
+      ${items.length > 1 ? `<button class="owed-all" data-paidall="${esc(who)}">Devolvéronme todo (${eur(t)})</button>` : ''}</div>`;
+  }).join('');
+}
+$('owedList').onclick = e => {
+  const one = e.target.closest('[data-paid]'), all = e.target.closest('[data-paidall]');
+  if (one) {
+    const g = gastos.find(g => g.id === +one.dataset.paid);
+    g.owed.paid = true; g.owed.paidDate = today();
+  } else if (all) {
+    const who = all.dataset.paidall;
+    if (!confirm(`Marcar como devolto todo o de ${who}?`)) return;
+    gastos.forEach(g => { if (g.owed && !g.owed.paid && g.owed.who === who) { g.owed.paid = true; g.owed.paidDate = today(); } });
+  } else return;
+  save(); render();
+};
+
 function render() {
   renderBanner();
+  renderOwed();
   const key = monthKey();
   $('monthLabel').textContent = view.toLocaleDateString('gl-ES', { month: 'short', year: 'numeric' }).replace('.', '');
   const cur = monthData(key), prev = monthData(addMonths(key, -1));
@@ -406,12 +467,12 @@ function render() {
     const y = yest.toISOString().slice(0, 10);
     $('list').innerHTML = Object.entries(groups).map(([d, items]) => {
       const label = d === t ? 'Hoxe' : d === y ? 'Onte' : new Date(d + 'T12:00').toLocaleDateString('gl-ES', { weekday: 'long', day: 'numeric', month: 'short' });
-      const net = items.reduce((s, g) => s + (isInc(g) ? g.amount : -g.amount), 0);
+      const net = items.reduce((s, g) => s + (g.owed ? 0 : isInc(g) ? g.amount : -g.amount), 0);
       return `<div class="day"><span>${label}</span><span>${net > 0 ? '+' : ''}${eur(net)}</span></div>` + items.map(g => {
         const info = catInfo(g.cat);
         return `<div class="item" data-id="${g.id}">${chip(info)}
-          <div class="info"><div class="desc">${esc(g.desc || info[2])}</div><div class="meta">${info[2]}${g.recId ? '<span class="tag">🔁 fixo</span>' : ''}</div></div>
-          <div class="amt ${isInc(g) ? 'inc' : ''}">${isInc(g) ? '+' : '−'}${eur(g.amount)}</div><button class="del" data-del="${g.id}" aria-label="Borrar">${TRASH}</button></div>`;
+          <div class="info"><div class="desc">${esc(g.desc || info[2])}</div><div class="meta">${info[2]}${g.recId ? '<span class="tag">🔁 fixo</span>' : ''}${g.owed ? `<span class="tag ${g.owed.paid ? 'done' : 'pend'}">👪 ${esc(g.owed.who)} · ${g.owed.paid ? 'devolto' : 'pendente'}</span>` : ''}</div></div>
+          <div class="amt ${isInc(g) ? 'inc' : g.owed ? 'owed' : ''}">${isInc(g) ? '+' : '−'}${eur(g.amount)}</div><button class="del" data-del="${g.id}" aria-label="Borrar">${TRASH}</button></div>`;
       }).join('');
     }).join('');
   } else {
@@ -434,7 +495,13 @@ function renderForm() {
   $('cats').innerHTML = CATS[selType].map(c =>
     `<button type="button" data-cat="${c[0]}" class="${c[0] === selCat ? 'sel' : ''}">${chip(c)}${c[2]}</button>`).join('');
   $('desc').placeholder = selType === 'ingreso' ? 'Ex.: nómina de novembro' : 'Ex.: compra no super';
+  updateOwedUI();
 }
+function updateOwedUI() {
+  $('owedWrap').hidden = selType === 'ingreso';
+  $('owedFields').hidden = selType === 'ingreso' || !$('owed').checked;
+}
+$('owed').onchange = updateOwedUI;
 
 // Descricións xa usadas: cantas veces, e a última categoría e importe de cada unha
 function knownDescs(type) {
@@ -480,6 +547,11 @@ function openForm(g, type) {
   selCat = g ? g.cat : CATS[selType][0][0];
   $('repeat').checked = false;
   $('repeatWrap').hidden = !!g;
+  const whos = [...new Set(gastos.filter(x => x.owed).sort((a, b) => b.id - a.id).map(x => x.owed.who))];
+  $('whoList').innerHTML = whos.map(w => `<option value="${esc(w)}">`).join('');
+  $('owed').checked = !!(g && g.owed);
+  $('owedWho').value = g && g.owed ? g.owed.who : (whos[0] || 'Pais');
+  $('owedPaid').checked = !!(g && g.owed && g.owed.paid);
   renderForm();
   renderSuggestions(!g);
   $('dlg').showModal();
@@ -496,8 +568,15 @@ $('form').onsubmit = e => {
   const amount = Math.round(parseFloat(String($('amount').value).replace(',', '.')) * 100) / 100;
   if (!(amount > 0) || !$('date').value) { e.preventDefault(); return; }
   const data = { type: selType, amount, cat: selCat, desc: $('desc').value.trim(), date: $('date').value };
+  if (selType === 'gasto' && $('owed').checked) {
+    const paid = $('owedPaid').checked;
+    const prevO = editingId ? gastos.find(g => g.id === editingId).owed : null;
+    data.owed = { who: $('owedWho').value.trim() || 'Pais', paid, paidDate: paid ? (prevO && prevO.paidDate) || today() : null };
+  }
   if (editingId) {
-    Object.assign(gastos.find(g => g.id === editingId), data);
+    const t = gastos.find(g => g.id === editingId);
+    Object.assign(t, data);
+    if (!data.owed) delete t.owed;
   } else if ($('repeat').checked) {
     const m = data.date.slice(0, 7);
     const r = { id: newId(), type: data.type, amount, cat: data.cat, desc: data.desc, day: +data.date.slice(8, 10), last: addMonths(m, -1) };
@@ -558,7 +637,7 @@ function download(name, text, type) {
 $('exportCsv').onclick = () => {
   const rows = [['Data', 'Tipo', 'Categoría', 'Descrición', 'Importe']].concat(
     [...gastos].sort((a, b) => a.date.localeCompare(b.date)).map(g =>
-      [g.date, isInc(g) ? 'Ingreso' : 'Gasto', catInfo(g.cat)[2], g.desc, (isInc(g) ? g.amount : -g.amount).toFixed(2).replace('.', ',')]));
+      [g.date, isInc(g) ? 'Ingreso' : g.owed ? `Adiantado (${g.owed.who}, ${g.owed.paid ? 'devolto' : 'pendente'})` : 'Gasto', catInfo(g.cat)[2], g.desc, (isInc(g) ? g.amount : -g.amount).toFixed(2).replace('.', ',')]));
   download('gastos.csv', '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n'), 'text/csv');
 };
 $('exportJson').onclick = async () => {

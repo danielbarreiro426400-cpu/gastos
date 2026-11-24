@@ -1,6 +1,6 @@
 // Garda a app no móbil para que funcione sen internet.
 // Cambia CACHE cando actualices a app para forzar a descarga da nova versión.
-const CACHE = 'gastos-v3';
+const CACHE = 'gastos-v4';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
